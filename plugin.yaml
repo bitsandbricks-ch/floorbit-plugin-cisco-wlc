@@ -1,14 +1,14 @@
-# Access points from a Cisco wireless controller, for the Wi-Fi view. Off until turned on under
+# Access points from a Cisco wireless controller, for the Wi-Fi view and the inventory. Off until turned on under
 # Settings > Plugins. It only reads: a read-only account (9800) or a read community (AireOS).
 id: cisco-wlc
 name: Cisco WLC
 icon: access-point
-version: "1.0.0"
+version: "1.1.0"
 floorbit: ">=0.1,<2"
-description: "Access points from a Cisco wireless controller for the Wi-Fi view: status, model, and per radio the channel, width, channel use and client count. Catalyst 9800 over RESTCONF, AireOS (3504, 5520, 8540, Mobility Express) over SNMP. Counts only, never client names or MACs."
+description: "Access points from a Cisco wireless controller for the Wi-Fi view: status, model, and per radio the channel, width, channel use and client count. Each AP also goes into the inventory (model, serial, address), ready to place on the floor plan. Catalyst 9800 over RESTCONF, AireOS (3504, 5520, 8540, Mobility Express) over SNMP. Counts only, never client names or MACs."
 author: Floorbit
 homepage: https://www.cisco.com/c/en/us/products/wireless/wireless-lan-controller/index.html
-uses: [settings, http, wifi]
+uses: [settings, http, wifi, inventory]
 settings:
   - {key: platform, label: Controller, type: select, default: catalyst-9800,
      options: [catalyst-9800, aireos],
