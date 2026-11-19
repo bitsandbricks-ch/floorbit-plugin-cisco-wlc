@@ -1,21 +1,24 @@
-# The manifest. Floorbit reads it before it runs any code: what the plugin may touch (uses), its
-# settings, and what the agent part may send. Field by field: Floorbit's docs/plugins.md.
-id: example                    # rename: lowercase letters, digits, dashes; the repo is floorbit-plugin-<id>
-name: Example reachability
-icon: network
-version: "0.1.0"
+# Access points from a Cisco wireless controller, for the Wi-Fi view. Off until turned on under
+# Settings > Plugins. It only reads: a read-only account (9800) or a read community (AireOS).
+id: cisco-wlc
+name: Cisco WLC
+icon: access-point
+version: "1.0.0"
 floorbit: ">=0.1,<2"
-description: "The local agent checks that a few services in the hall answer on their TCP port and the dashboard shows how many do."
+description: "Access points from a Cisco wireless controller for the Wi-Fi view: status, model, and per radio the channel, width, channel use and client count. Catalyst 9800 over RESTCONF, AireOS (3504, 5520, 8540, Mobility Express) over SNMP. Counts only, never client names or MACs."
 author: Floorbit
-homepage: https://github.com/bitsandbricks-ch/floorbit-plugin-template
-uses: [agent, settings, widgets, storage]
+homepage: https://www.cisco.com/c/en/us/products/wireless/wireless-lan-controller/index.html
+uses: [settings, http, wifi]
 settings:
-  - {key: targets, label: Services, type: text, placeholder: "dns = 192.0.2.53:53\ncache = 192.0.2.80:80",
-     help: "One per line: a name = address:port. The agent tries to open a TCP connection to each."}
-  - {key: interval, label: Seconds between checks, type: int, default: 30, min: 5, max: 600}
-widgets:
-  - {id: summary, label: Services up, size: small, refresh: 30}
-agent:
-  sends:
-    # aggregate: counts only. Floorbit and the agent both refuse a payload with an address in it.
-    status: {privacy: aggregate, latest: true}
+  - {key: platform, label: Controller, type: select, default: catalyst-9800,
+     options: [catalyst-9800, aireos],
+     help: "catalyst-9800: IOS-XE controllers (9800-L, -40, -80, -CL, embedded). aireos: 3504, 5520, 8540 and Mobility Express."}
+  - {key: url, label: Controller URL, type: url, placeholder: "https://wlc.example.com",
+     help: "9800: the controller's address. RESTCONF must be on (restconf, and ip http secure-server)."}
+  - {key: username, label: Username, type: string, help: "9800: an account with privilege 15 read access to RESTCONF."}
+  - {key: password, label: Password, type: secret}
+  - {key: host, label: SNMP address, type: string, placeholder: "192.0.2.10",
+     help: "AireOS: the controller's management address (UDP 161)."}
+  - {key: community, label: SNMP community, type: secret, help: "AireOS: a read-only SNMP v2c community."}
+  - {key: verify_ssl, label: Verify TLS certificates, type: bool, default: true,
+     help: "9800 controllers ship with a self-signed certificate. Turn it off only on a network you trust."}
