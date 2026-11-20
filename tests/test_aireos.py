@@ -18,6 +18,7 @@ MIB = {
     f"{AP}.3.{MAC_1}": (snmp.OCTETS, b"ap-hall-01"), f"{AP}.3.{MAC_2}": (snmp.OCTETS, b"ap-hall-02"),
     f"{AP}.6.{MAC_1}": (snmp.INTEGER, 1), f"{AP}.6.{MAC_2}": (snmp.INTEGER, 2),
     f"{AP}.16.{MAC_1}": (snmp.OCTETS, b"AIR-AP2802I-E-K9"), f"{AP}.16.{MAC_2}": (snmp.OCTETS, b"AIR-AP1852I-E-K9"),
+    f"{AP}.17.{MAC_1}": (snmp.OCTETS, b"FCW0000X002"), f"{AP}.19.{MAC_1}": (snmp.IP_ADDRESS, bytes([192, 0, 2, 102])),
     f"{IF}.2.{MAC_1}.0": (snmp.INTEGER, 1), f"{IF}.2.{MAC_1}.1": (snmp.INTEGER, 2),
     f"{IF}.4.{MAC_1}.0": (snmp.INTEGER, 11), f"{IF}.4.{MAC_1}.1": (snmp.INTEGER, 149),
     f"{IF}.12.{MAC_1}.0": (snmp.INTEGER, 2), f"{IF}.12.{MAC_1}.1": (snmp.INTEGER, 2),
@@ -34,7 +35,7 @@ def oid_key(oid):
 
 
 def encode_value(tag, value):
-    if tag == snmp.OCTETS:
+    if tag in (snmp.OCTETS, snmp.IP_ADDRESS):
         return snmp.tlv(tag, value)
     if tag == snmp.INTEGER:
         return snmp.enc_int(value)
@@ -133,3 +134,16 @@ def test_a_wrong_community_says_so(make, agent, monkeypatch):
 def test_unset_says_what_is_missing(make):
     with pytest.raises(PluginError, match="SNMP address and community"):
         make(platform="aireos").wifi_aps()
+
+
+def test_access_points_into_the_inventory(make, agent, monkeypatch):
+    from floorbit import inventory
+    port, _ = agent
+    plugin = point_at(make(platform="aireos", host="127.0.0.1", community="example-community"), monkeypatch, port)
+    items, skipped = inventory.clean_feed(plugin.inventory())
+    by = {i["ref"]: i for i in items}
+    assert skipped == 0 and set(by) == {"ap/02:00:00:00:01:00", "ap/02:00:00:00:02:00"}
+    one = by["ap/02:00:00:00:01:00"]
+    assert (one["name"], one["role"], one["serial"], one["mgmt_ip"], one["status"]) == \
+        ("ap-hall-01", "access-point", "FCW0000X002", "192.0.2.102", "active")
+    assert by["ap/02:00:00:00:02:00"]["status"] == "offline"

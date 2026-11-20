@@ -9,6 +9,9 @@ AireOS (3504, 5520, 8540, Mobility Express): SNMP v2c walks of AIRESPACE-WIRELES
 bsnAPTable (name, model, state), bsnAPIfTable (channel, radio state, clients) and
 bsnAPIfLoadParametersTable (channel use, clients).
 
+The same reads give the inventory each AP (role access-point, with its model, serial and address),
+so APs needn't be typed in to be placed on the floor plan.
+
 Floorbit runs this on the local agent in the hall. Only counts leave: never client names or MACs.
 """
 from floorbit.plugins.base import Plugin as Base
@@ -42,13 +45,33 @@ BANDS_9800 = {'dot11-2-dot-4-ghz-band': '2.4', 'dot11-5-ghz-band': '5', 'dot11-6
 
 # AIRESPACE-WIRELESS-MIB (enterprise 14179)
 BSN_AP = '1.3.6.1.4.1.14179.2.2.1.1'             # bsnAPEntry, index: AP base radio MAC (6 numbers)
-BSN_AP_NAME, BSN_AP_STATUS, BSN_AP_MODEL = '3', '6', '16'
+BSN_AP_NAME, BSN_AP_STATUS, BSN_AP_MODEL, BSN_AP_SERIAL, BSN_AP_IP = '3', '6', '16', '17', '19'
 BSN_AP_IF = '1.3.6.1.4.1.14179.2.2.2.1'          # bsnAPIfEntry, index: MAC + slot
 BSN_IF_TYPE, BSN_IF_CHANNEL, BSN_IF_OPER, BSN_IF_USERS = '2', '4', '12', '15'
 BSN_AP_LOAD = '1.3.6.1.4.1.14179.2.2.13.1'       # bsnAPIfLoadParametersEntry, index: MAC + slot
 BSN_LOAD_CHANNEL_UTIL, BSN_LOAD_CLIENTS = '3', '4'
 BSN_ASSOCIATED, BSN_IF_UP = 1, 2
 BSN_IF_BANDS = {1: '2.4', 2: '5'}                # bsnAPIfType: dot11b, dot11a
+
+
+def _text(value):
+    value = value.decode('utf-8', 'replace') if isinstance(value, bytes) else str(value or '')
+    return ' '.join(value.split())
+
+
+def _width(value):
+    """20 or ``chan-width-20-mhz`` (the YANG enum) -> 20."""
+    import re
+    m = re.search(r'(20|40|80|160|320)', str(value or ''))
+    return int(m.group(1)) if m else None
+
+
+def _mac_of(index):
+    """An SNMP index of six numbers as aa:bb:cc:dd:ee:ff."""
+    parts = str(index).split('.')
+    if len(parts) != 6 or not all(p.isdigit() and int(p) < 256 for p in parts):
+        return None
+    return ':'.join(f'{int(p):02x}' for p in parts)
 
 
 def _band_from_channel(channel):
@@ -64,12 +87,28 @@ class Plugin(Base):
             return bool(self.settings.get('host') and self.settings.get('community'))
         return bool(self.settings.get('url') and self.settings.get('username') and self.settings.get('password'))
 
-    def wifi_aps(self):
+    def _aps(self):
+        """Every AP with its radios, and its MAC, serial and address for the inventory."""
         if not self._ready():
             if self._platform() == 'aireos':
                 raise PluginError('Set the SNMP address and community under Settings > Plugins first.')
             raise PluginError('Set the controller URL, username and password under Settings > Plugins first.')
         return self._aireos() if self._platform() == 'aireos' else self._catalyst()
+
+    def wifi_aps(self):
+        return [{k: v for k, v in ap.items() if k not in ('mac', 'serial', 'ip')} for ap in self._aps()]
+
+    def inventory(self):
+        """Each AP as an inventory device, by its MAC: renaming an AP on the controller keeps it."""
+        out = []
+        for ap in self._aps():
+            if not ap.get('mac'):
+                continue
+            device = {'id': f"ap/{ap['mac']}", 'name': ap['name'], 'role': 'access-point', 'model': ap['model'],
+                      'serial': ap.get('serial') or '', 'mgmt_ip': ap.get('ip') or '', 'platform': 'cisco-ap',
+                      'status': 'active' if ap['status'] == 'up' else 'offline'}
+            out.append({k: v for k, v in device.items() if v})
+        return out
 
     def test(self):
         aps = self.wifi_aps()
@@ -109,7 +148,7 @@ class Plugin(Base):
             got = load.get((r.get('wtp-mac'), r.get('radio-slot-id')), {})
             by_ap.setdefault(r.get('wtp-mac'), []).append({
                 'band': BANDS_9800.get(r.get('current-active-band')) or _band_from_channel(channel),
-                'channel': channel, 'width': cfg.get('chan-width') or None,
+                'channel': channel, 'width': _width(cfg.get('chan-width')),
                 'utilization': got.get('cca-util-percentage'),
                 'clients': got.get('stations') or 0,
                 'up': r.get('oper-state') == 'radio-up'})
@@ -123,7 +162,9 @@ class Plugin(Base):
             radios = [r for r in by_ap.get(ap.get('wtp-mac'), []) if r.pop('up')]
             out.append({'name': name, 'model': (static.get('ap-models') or {}).get('model') or '',
                         'status': 'up' if state in (None, 'registered', 'ap-up') else 'down',
-                        'clients': sum(r['clients'] for r in radios), 'radios': radios})
+                        'clients': sum(r['clients'] for r in radios), 'radios': radios,
+                        'mac': str(ap.get('wtp-mac') or '').lower(), 'ip': _text(ap.get('ip-addr')),
+                        'serial': _text((static.get('board-data') or {}).get('wtp-serial-num'))})
         return out
 
     # AireOS --------------------------------------------------------------------------------
@@ -140,7 +181,8 @@ class Plugin(Base):
             # suffix "col.m1.m2.m3.m4.m5.m6[.slot]" -> {index after col: value}
             return {k[len(col) + 1:]: v for k, v in table.items() if k.startswith(col + '.')}
 
-        names, status, models = (column(ap, c) for c in (BSN_AP_NAME, BSN_AP_STATUS, BSN_AP_MODEL))
+        names, status, models, serials, ips = (column(ap, c) for c in (BSN_AP_NAME, BSN_AP_STATUS, BSN_AP_MODEL,
+                                                                     BSN_AP_SERIAL, BSN_AP_IP))
         types, channels, opers, users = (column(ifs, c) for c in (BSN_IF_TYPE, BSN_IF_CHANNEL, BSN_IF_OPER,
                                                                    BSN_IF_USERS))
         util, load_clients = column(loads, BSN_LOAD_CHANNEL_UTIL), column(loads, BSN_LOAD_CLIENTS)
@@ -155,13 +197,12 @@ class Plugin(Base):
                 'channel': channel, 'width': None, 'utilization': util.get(index), 'clients': clients})
         out = []
         for mac, raw in names.items():
-            name = raw.decode('utf-8', 'replace') if isinstance(raw, bytes) else str(raw or '')
-            if not name.strip():
+            name = _text(raw)
+            if not name:
                 continue
-            model = models.get(mac)
-            model = model.decode('utf-8', 'replace') if isinstance(model, bytes) else str(model or '')
             rs = radios.get(mac, [])
-            out.append({'name': name, 'model': model,
+            out.append({'name': name, 'model': _text(models.get(mac)),
                         'status': 'up' if status.get(mac) == BSN_ASSOCIATED else 'down',
-                        'clients': sum(r['clients'] for r in rs), 'radios': rs})
+                        'clients': sum(r['clients'] for r in rs), 'radios': rs,
+                        'mac': _mac_of(mac), 'serial': _text(serials.get(mac)), 'ip': _text(ips.get(mac))})
         return out

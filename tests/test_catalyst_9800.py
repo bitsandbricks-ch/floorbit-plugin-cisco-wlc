@@ -9,8 +9,9 @@ RRM_OPER = "Cisco-IOS-XE-wireless-rrm-oper"
 MAC_1, MAC_2 = "02:00:00:00:01:00", "02:00:00:00:02:00"
 
 CAPWAP = [
-    {"wtp-mac": MAC_1, "name": "ap-hall-01", "ap-state": {"ap-operation-state": "registered"},
-     "device-detail": {"static-info": {"ap-models": {"model": "C9130AXI-E"}}}},
+    {"wtp-mac": MAC_1, "name": "ap-hall-01", "ap-state": {"ap-operation-state": "registered"}, "ip-addr": "192.0.2.101",
+     "device-detail": {"static-info": {"ap-models": {"model": "C9130AXI-E"},
+                                       "board-data": {"wtp-serial-num": "FOC0000X001"}}}},
     {"wtp-mac": MAC_2, "name": "ap-hall-02", "ap-state": {"ap-operation-state": "ap-down"},
      "device-detail": {"static-info": {"ap-models": {"model": "C9120AXI-E"}}}},
 ]
@@ -18,7 +19,8 @@ RADIOS = [
     {"wtp-mac": MAC_1, "radio-slot-id": 0, "radio-type": "dot11-radio-type-802-11bg", "oper-state": "radio-up",
      "current-active-band": "dot11-2-dot-4-ghz-band", "phy-ht-cfg": {"cfg-data": {"curr-freq": 6, "chan-width": 20}}},
     {"wtp-mac": MAC_1, "radio-slot-id": 1, "radio-type": "dot11-radio-type-802-11a", "oper-state": "radio-up",
-     "current-active-band": "dot11-5-ghz-band", "phy-ht-cfg": {"cfg-data": {"curr-freq": 52, "chan-width": 80}}},
+     "current-active-band": "dot11-5-ghz-band",
+     "phy-ht-cfg": {"cfg-data": {"curr-freq": 52, "chan-width": "chan-width-80-mhz"}}},
     {"wtp-mac": MAC_1, "radio-slot-id": 2, "radio-type": "dot11-radio-type-802-11a", "oper-state": "radio-down",
      "current-active-band": "dot11-6-ghz-band", "phy-ht-cfg": {"cfg-data": {"curr-freq": 37, "chan-width": 160}}},
 ]
@@ -97,3 +99,16 @@ def test_test_button(make, controller):
 def test_unset_says_what_is_missing(make):
     with pytest.raises(PluginError, match="controller URL, username and password"):
         make(platform="catalyst-9800").wifi_aps()
+
+
+def test_access_points_into_the_inventory(make, controller):
+    from floorbit import inventory
+    items, skipped = inventory.clean_feed(make(url="https://wlc.example.com", username="floorbit",
+                                               password="example-password").inventory())
+    assert skipped == 0
+    by = {i["ref"]: i for i in items}
+    assert by[f"ap/{MAC_1}"] == {"ref": f"ap/{MAC_1}", "name": "ap-hall-01", "role": "access-point",
+                                 "model": "C9130AXI-E", "serial": "FOC0000X001", "mgmt_ip": "192.0.2.101",
+                                 "platform": "cisco-ap",
+                                 "status": "active"}
+    assert by[f"ap/{MAC_2}"]["status"] == "offline" and "serial" not in by[f"ap/{MAC_2}"]

@@ -2,7 +2,7 @@
 
 [![Test and release](https://github.com/bitsandbricks-ch/floorbit-plugin-cisco-wlc/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/bitsandbricks-ch/floorbit-plugin-cisco-wlc/actions/workflows/release.yml?query=branch%3Amain)
 
-The `cisco-wlc` plugin for [Floorbit](https://github.com/bitsandbricks-ch/floorbit): access points from a Cisco wireless controller for the Wi-Fi view (status, and per radio the channel, width, channel use and client count).
+The `cisco-wlc` plugin for [Floorbit](https://github.com/bitsandbricks-ch/floorbit): access points from a Cisco wireless controller for the Wi-Fi view (status, and per radio the channel, width, channel use and client count), and each AP in the inventory (role access-point, with its model, serial and address), ready to place on the floor plan.
 Install it under Settings > Plugins > Marketplace; how to set it up is in Floorbit's
 [docs/plugins.md](https://github.com/bitsandbricks-ch/floorbit/blob/master/docs/plugins.md).
 
